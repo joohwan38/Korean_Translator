@@ -1,6 +1,6 @@
 # 한국어 다국어 번역기 (Korean Multi-Language Translator)
 
-![Uploading app_icon.png…]()
+<img width="541" alt="app_icon" src="https://github.com/user-attachments/assets/a8f2bce0-7ec4-4c74-9e82-fad7bc9986bd" />
 
 
 ## 목차
