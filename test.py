@@ -37,7 +37,7 @@ class TranslationApp:
         self.is_running = False
         self.stop_requested = False
         self.ollama_status = tk.StringVar(value="확인 중...")
-        self.selected_model = tk.StringVar(value="llama3.2")  # 기본 모델: llama3.2
+        self.selected_model = tk.StringVar(value="gemma3:12b")  # 기본 모델: gemma3:12b
         self.available_models = []
         self.translation_cache = {}  # 메모리 내 캐시
         self.languages = ["EN", "JA", "ZH_HANT", "TH", "ES"]
@@ -74,6 +74,7 @@ class TranslationApp:
         tk.Label(model_frame, text="번역 모델:").pack(side=tk.LEFT)
         self.model_dropdown = ttk.Combobox(model_frame, textvariable=self.selected_model, state="readonly")
         self.model_dropdown.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.model_dropdown.bind("<<ComboboxSelected>>", self.on_model_change)  # Bind model change event
         refresh_button = tk.Button(model_frame, text="새로고침", command=self.refresh_models, width=8)
         refresh_button.pack(side=tk.RIGHT)
 
@@ -110,12 +111,15 @@ class TranslationApp:
         # Ollama API endpoint
         self.ollama_url = "http://localhost:11434/api/generate"
 
+        # Ensure database connection is closed on app exit
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         # Check Ollama status and get models
         self.check_ollama_status()
 
     def init_cache_db(self):
         """SQLite 영구 캐시 초기화"""
-        self.conn = sqlite3.connect("translation_cache.db")
+        self.conn = sqlite3.connect("translation_cache.db", check_same_thread=False)  # Allow multi-thread access
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS translations (
                 text TEXT,
@@ -125,6 +129,18 @@ class TranslationApp:
             )
         """)
         self.conn.commit()
+
+    def clear_caches(self):
+        """Clear both in-memory and SQLite translation caches."""
+        self.translation_cache.clear()
+        self.conn.execute("DELETE FROM translations")
+        self.conn.commit()
+        self.status_label.config(text="캐시 초기화 완료")
+
+    def on_closing(self):
+        """Handle app closing by cleaning up resources."""
+        self.conn.close()
+        self.root.destroy()
 
     def get_cached_translation(self, text, target_lang):
         """캐시에서 번역 조회 (메모리 → SQLite)"""
@@ -156,14 +172,29 @@ class TranslationApp:
             self.root.after(0, lambda: self.progress_text.set(f"{percentage}%"))
             self.root.after(0, lambda: self.status_label.configure(text=message))
 
+    def install_model(self, model_name):
+        """Install an Ollama model using 'ollama pull'."""
+        try:
+            self.status_label.config(text=f"{model_name} 설치 중...")
+            process = subprocess.Popen(["ollama", "pull", model_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            if process.returncode == 0:
+                self.status_label.config(text=f"{model_name} 설치 완료")
+                self.refresh_models()
+            else:
+                self.status_label.config(text=f"{model_name} 설치 실패: {stderr.decode()}")
+        except Exception as e:
+            self.status_label.config(text=f"{model_name} 설치 오류: {str(e)}")
+
     def refresh_models(self):
         """사용 가능한 Ollama 모델 목록 새로고침"""
         self.status_label.config(text="모델 목록 새로고침 중...")
+        self.clear_caches()  # Clear caches when refreshing models
         self.available_models = []
         self.get_available_models()
 
     def get_available_models(self):
-        """사용 가능한 Ollama 모델 목록 가져오기 (경량 모델 우선)"""
+        """사용 가능한 Ollama 모델 목록 가져오기 (gemma3:12b 우선)"""
         try:
             response = requests.get("http://localhost:11434/api/tags", timeout=5)
             if response.status_code == 200:
@@ -172,18 +203,21 @@ class TranslationApp:
                 self.available_models = [model.get('name', model.get('Name', '')) for model in models if model.get('name') or model.get('Name')]
                 
                 if not self.available_models:
-                    self.status_label.config(text="사용 가능한 모델 없음. 'ollama pull'로 모델 설치 필요.")
-                    self.available_models = ["모델 없음"]
+                    self.status_label.config(text="모델 없음. gemma3:12b 설치 시도...")
+                    self.install_model("gemma3:12b")
+                    self.available_models = ["설치 중..."]
+                    self.model_dropdown['values'] = self.available_models
+                    return
                 
-                # 모델 우선순위: llama3.2 → 경량 모델(grok, mistral) → 기타
-                preferred_models = ['llama3.2', 'grok', 'mistral']
+                # 모델 우선순위: gemma3:12b → grok → mistral → 기타
+                preferred_models = ['gemma3:12b', 'grok', 'mistral']
                 sorted_models = sorted(self.available_models, 
                                     key=lambda x: (preferred_models.index(x) if x in preferred_models else len(preferred_models), x))
                 self.available_models = sorted_models
 
                 self.model_dropdown['values'] = self.available_models
-                if 'llama3.2' in self.available_models:
-                    self.selected_model.set('llama3.2')
+                if 'gemma3:12b' in self.available_models:
+                    self.selected_model.set('gemma3:12b')
                 elif self.available_models:
                     self.selected_model.set(self.available_models[0])
                 
@@ -242,7 +276,7 @@ class TranslationApp:
         help_text = """
         [사용 방법]
         1. Ollama가 설치 및 실행 중인지 확인.
-        2. 드롭다운에서 모델 선택 (권장: llama3.2 또는 grok/mistral).
+        2. 드롭다운에서 모델 선택 (권장: gemma3:12b 또는 grok/mistral).
         3. '찾아보기'로 Excel 파일 선택.
         4. '번역 시작' 클릭.
         5. 중지하려면 '번역 중지' 클릭.
@@ -253,8 +287,10 @@ class TranslationApp:
         - KO 열에 한국어 입력, 나머지 비어 있으면 번역.
 
         [모델 추가]
-        - 터미널에서 'ollama pull llama3.2' 등 실행.
-        - 추가 후 '새로고침' 클릭.
+        - 터미널에서 'ollama pull gemma3:12b' 등 실행.
+        - 모델 없으면 gemma3:12b 자동 설치 시도.
+        - 추가/변경 후 '새로고침' 클릭.
+        - 모델 변경 시 이전 번역 캐시 자동 삭제.
 
         [문제 해결]
         - '확인 중...' 지속 시 Ollama 설치 확인.
@@ -303,7 +339,7 @@ class TranslationApp:
         if cached:
             return cached
         model = self.selected_model.get()
-        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃"]:
+        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃", "설치 중..."]:
             self.root.after(0, lambda: messagebox.showerror("오류", "유효한 모델 선택 필요"))
             return text
         prompt = self.create_prompt(text, target_lang)
@@ -368,8 +404,8 @@ class TranslationApp:
             messagebox.showerror("오류", "Excel 파일 선택 필요")
             return False
         model = self.selected_model.get()
-        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃"]:
-            messagebox.showerror("오류", "유효한 모델 선택 필요")
+        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃", "설치 중..."]:
+            messagebox.showerror("오류", "유효한 모델 선택 필요 (설치 완료 대기)")
             return False
         try:
             response = requests.get("http://localhost:11434/api/tags", timeout=5)
@@ -416,9 +452,10 @@ class TranslationApp:
                             translation_queue.append((idx, korean_text, lang))
 
             progress_count = 0
-            # 멀티프로세싱 풀 설정
-            num_processes = min(cpu_count(), 4)  # CPU 코어 수 또는 최대 4
-            with ProcessPoolExecutor(max_workers=num_processes) as executor:
+            # Create a single event loop for all translations
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
                 for idx, korean_text, lang in translation_queue:
                     if self.stop_requested:
                         self.update_progress(progress_count, total_translations, "번역 중지됨")
@@ -428,15 +465,13 @@ class TranslationApp:
                     self.update_progress(progress_count, total_translations, 
                                        f"텍스트 {progress_count+1}/{len(translation_queue)} 번역 중... 언어: {lang_name}")
                     
-                    # 비동기 배치 번역 호출
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
                     translated_texts = loop.run_until_complete(
                         self.translate_batch_async([korean_text], lang)
                     )
-                    loop.close()
                     df.at[idx, lang] = translated_texts[0]
                     progress_count += 1
+            finally:
+                loop.close()
 
             base_name = os.path.splitext(file_path)[0]
             output_file = f"{base_name}_Translated.xlsx"
@@ -486,6 +521,11 @@ class TranslationApp:
         self.progress_text.set("0%")
         self.update_progress(0, 100, f"번역 시작... 모델: {self.selected_model.get()}")
         threading.Thread(target=self.translate_excel, daemon=True).start()
+
+    def on_model_change(self, event):
+        """Handle model selection change by clearing caches."""
+        self.clear_caches()
+        self.status_label.config(text=f"모델 변경: {self.selected_model.get()}")
 
 if __name__ == "__main__":
     root = tk.Tk()
