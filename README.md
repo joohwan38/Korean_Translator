@@ -1,6 +1,7 @@
 # 한국어 다국어 번역기 (Korean Multi-Language Translator)
 
-![번역기 이미지](https://via.placeholder.com/800x300.png?text=Korean+Multi-Language+Translator)
+![Uploading app_icon.png…]()
+
 
 ## 목차
 - [소개](#소개)
