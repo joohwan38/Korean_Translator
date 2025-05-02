@@ -61,6 +61,11 @@
 3. `Korean Translator.app`을 애플리케이션 폴더로 드래그합니다.
 4. 동봉 된 readme.txt 파일을 읽어보세요.
 
+5. 최초 실행 시 다음과 같은 경고창이 뜰 수 있습니다. 아래와 같이 진행해 주세요.
+
+<img width="825" alt="image" src="https://github.com/user-attachments/assets/6929e1ca-e017-4dbe-9022-c3c52c746760" />
+
+
 
 ### Windows 설치 (아직 만들지 않았음)
 
