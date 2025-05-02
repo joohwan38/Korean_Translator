@@ -17,7 +17,7 @@ from threading import local, Lock
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
-# 로그 파일 경로 명시
+# 로그 설정
 log_file = os.path.expanduser("~/KoreanTranslator.log")
 logging.basicConfig(
     level=logging.DEBUG,
@@ -46,6 +46,7 @@ else:
 
 os.environ['PYTHONHASHSEED'] = '1'
 
+
 class TranslationApp:
     def __init__(self, root):
         logger.debug("TranslationApp 초기화 시작")
@@ -54,20 +55,23 @@ class TranslationApp:
             self.root.title("한국어 다국어 번역기")
             self.root.geometry("700x450")
             self.root.minsize(650, 400)
-            logger.debug("tkinter 창 설정 완료")
+
+            # 전역 폰트 설정
+            default_font = ("Segoe UI", 14)
+            self.root.option_add("*Font", default_font)
 
             # 전체 프레임
-            main_frame = tk.Frame(root)
-            main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+            main_frame = ttk.Frame(root, padding=20)
+            main_frame.pack(fill=tk.BOTH, expand=True)
 
             # Variables
             self.file_path = tk.StringVar()
             self.is_running = False
             self.stop_requested = False
             self.ollama_status = tk.StringVar(value="확인 중...")
-            self.selected_model = tk.StringVar(value="gemma3:12b")  # 기본 모델: gemma3:12b
+            self.selected_model = tk.StringVar(value="gemma3:12b")
             self.available_models = []
-            self.translation_cache = {}  # 메모리 내 캐시
+            self.translation_cache = {}
             self.languages = ["EN", "JA", "ZH_HANT", "TH", "ES"]
             self.language_names = {
                 "EN": "English",
@@ -77,79 +81,81 @@ class TranslationApp:
                 "ES": "Spanish"
             }
 
-            # 스레드별 SQLite 연결을 위한 threading.local
+            # 스레드별 SQLite 연결
             self.thread_local = local()
-            self.lock = threading.Lock()  # 데이터베이스 접근 동기화
+            self.lock = Lock()
 
-            # 영구 캐시 초기화 (SQLite)
+            # 영구 캐시 초기화
             self.init_cache_db()
 
             # GUI Elements
-            header_frame = tk.Frame(main_frame)
+            header_frame = ttk.Frame(main_frame)
             header_frame.pack(fill=tk.X, pady=10)
-            tk.Label(header_frame, text="한국어 다국어 번역기", font=("Arial", 18, "bold")).pack(side=tk.LEFT)
+
+            ttk.Label(header_frame, text="한국어 다국어 번역기", font=("Segoe UI", 18, "bold")).pack(side=tk.LEFT)
+
             self.status_indicator = tk.Canvas(header_frame, width=15, height=15, bg="yellow")
             self.status_indicator.pack(side=tk.RIGHT, padx=5)
-            tk.Label(header_frame, textvariable=self.ollama_status).pack(side=tk.RIGHT)
 
-            style = ttk.Style()
-            style.configure("Custom.TButton", foreground="black", background="#D3D3D3", bordercolor="black", 
-                            font=("Arial", 12), relief="solid", borderwidth=1)
-            style.map("Custom.TButton", 
-                      foreground=[("active", "black"), ("disabled", "black")],
-                      background=[("active", "#D3D3D3"), ("disabled", "#D3D3D3")],
-                      bordercolor=[("active", "black"), ("disabled", "black")])
-            # Combobox 화살표 스타일 설정
-            style.configure("TCombobox", arrowcolor="black", foreground="black", background="white")
+            ttk.Label(header_frame, textvariable=self.ollama_status).pack(side=tk.RIGHT)
 
-            file_frame = tk.Frame(main_frame)
+            # 파일 선택
+            file_frame = ttk.Frame(main_frame)
             file_frame.pack(fill=tk.X, pady=10)
-            tk.Label(file_frame, text="Excel 파일:").pack(side=tk.LEFT)
-            tk.Entry(file_frame, textvariable=self.file_path, width=40).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-            browse_button = ttk.Button(file_frame, text="찾아보기", command=self.browse_file, style="Custom.TButton", width=8)
-            browse_button.pack(side=tk.RIGHT)
 
-            model_frame = tk.Frame(main_frame)
+            ttk.Label(file_frame, text="Excel 파일:").pack(side=tk.LEFT)
+            ttk.Entry(file_frame, textvariable=self.file_path, width=40).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+            self.browse_button = ttk.Button(file_frame, text="찾아보기", command=self.browse_file, width=8)
+            self.browse_button.pack(side=tk.RIGHT)
+
+            # 모델 선택
+            model_frame = ttk.Frame(main_frame)
             model_frame.pack(fill=tk.X, pady=10)
-            tk.Label(model_frame, text="번역 모델:").pack(side=tk.LEFT)
+
+            ttk.Label(model_frame, text="번역 모델:").pack(side=tk.LEFT)
             self.model_dropdown = ttk.Combobox(model_frame, textvariable=self.selected_model, state="readonly")
             self.model_dropdown.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
             self.model_dropdown.bind("<<ComboboxSelected>>", self.on_model_change)
-            refresh_button = ttk.Button(model_frame, text="새로고침", command=self.refresh_models, style="Custom.TButton", width=8)
-            refresh_button.pack(side=tk.RIGHT)
 
-            progress_frame = tk.Frame(main_frame)
+            self.refresh_button = ttk.Button(model_frame, text="새로고침", command=self.refresh_models, width=8)
+            self.refresh_button.pack(side=tk.RIGHT)
+
+            # 진행률
+            progress_frame = ttk.Frame(main_frame)
             progress_frame.pack(fill=tk.X, pady=10)
+
             self.progress = ttk.Progressbar(progress_frame, length=500, mode='determinate')
             self.progress.pack(fill=tk.X, pady=5)
-            self.progress_text = tk.StringVar(value="0%")
-            tk.Label(progress_frame, textvariable=self.progress_text).pack()
 
-            self.status_label = tk.Label(main_frame, text="준비 완료", wraplength=500, height=3, anchor="w", justify=tk.LEFT)
+            self.progress_text = tk.StringVar(value="0%")
+            ttk.Label(progress_frame, textvariable=self.progress_text).pack()
+
+            self.status_label = ttk.Label(main_frame, text="준비 완료", wraplength=500, anchor="w", justify=tk.LEFT)
             self.status_label.pack(fill=tk.X, pady=10)
 
-            button_frame = tk.Frame(main_frame)
+            # 버튼 그룹
+            button_frame = ttk.Frame(main_frame)
             button_frame.pack(fill=tk.X, pady=10)
-            self.start_button = ttk.Button(button_frame, text="번역 시작", command=self.start_translation, 
-                                           style="Custom.TButton", width=12)
+
+            self.start_button = ttk.Button(button_frame, text="번역 시작", command=self.start_translation, width=12)
             self.start_button.pack(side=tk.LEFT, padx=5)
-            self.stop_button = ttk.Button(button_frame, text="번역 중지", command=self.stop_translation, 
-                                          style="Custom.TButton", width=12, state=tk.DISABLED)
+
+            self.stop_button = ttk.Button(button_frame, text="번역 중지", command=self.stop_translation, width=12, state=tk.DISABLED)
             self.stop_button.pack(side=tk.LEFT, padx=5)
-            help_button = ttk.Button(button_frame, text="도움말", command=self.show_help,
-                                     style="Custom.TButton", width=10)
+
+            help_button = ttk.Button(button_frame, text="도움말", command=self.show_help, width=10)
             help_button.pack(side=tk.RIGHT, padx=5)
-            check_button = ttk.Button(button_frame, text="Ollama 확인", command=self.check_ollama_status,
-                                      style="Custom.TButton", width=12)
+
+            check_button = ttk.Button(button_frame, text="Ollama 확인", command=self.check_ollama_status, width=12)
             check_button.pack(side=tk.RIGHT, padx=5)
 
             self.ollama_url = "http://localhost:11434/api/generate"
 
             self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
             logger.debug("GUI 초기화 완료")
+
             self.check_ollama_status()
-            
+
         except Exception as e:
             logger.error(f"초기화 오류: {str(e)}\n{traceback.format_exc()}")
             messagebox.showerror("초기화 오류", f"앱 초기화 실패: {str(e)}")
@@ -568,7 +574,7 @@ class TranslationApp:
         help_window = tk.Toplevel(self.root)
         help_window.title("도움말")
         help_window.geometry("600x500")
-        tk.Label(help_window, text="Korean Translator 도움말", font=("Arial", 16, "bold")).pack(pady=10)
+        tk.Label(help_window, text="Korean Translator 도움말", font=("Segoe UI", 16, "bold")).pack(pady=10)
         
         text_widget = tk.Text(help_window, wrap=tk.WORD, width=70, height=25, padx=15, pady=15)
         text_widget.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
@@ -586,7 +592,7 @@ class TranslationApp:
         - 'Ollama 확인' 버튼을 클릭하여 설치 여부를 확인하세요.
         - 설치되어 있지 않다면 안내에 따라 설치하세요.
         2. Ollama가 실행 중인지 확인하세요 (상태 표시기가 녹색이면 실행 중).
-        3. 드롭다운에서 모델 선택 (권장: gemma3:12b 또는 grok/mistral).
+        3. 드롭다운에서 모델 선택 (권장: gemma3:12b 또는 llama3.2/mistral).
         4. '찾아보기'로 Excel 파일 선택.
         5. '번역 시작' 클릭.
         6. 중지하려면 '번역 중지' 클릭.
@@ -606,7 +612,7 @@ class TranslationApp:
 
         [모델 추가]
         - 터미널에서 'ollama pull gemma3:12b' 등 실행.
-        - 모델 없으면 gemma3:12b 자동 설치 시도.
+        - 모델이 하나도 없으면 gemma3:12b 자동 설치 시도.
         - 추가/변경 후 '새로고침' 클릭.
         - 모델 변경 시 이전 번역 캐시 자동 삭제.
 
@@ -837,7 +843,7 @@ Just give the translated word or phrase and nothing else."""
 if __name__ == "__main__":
     logger.debug("메인 실행 시작")
     try:
-        root = ttk.Window(themename="darkly")
+        root = ttk.Window(themename="flatly")
         logger.debug("tkinter 루트 창 생성")
         
         # macOS에서 앱 아이콘 설정
