@@ -1,6 +1,4 @@
 # 한국어 다국어 번역기 (Korean Multi-Language Translator)
-## License
-This project is licensed under the MIT License - see the [LICENSE](license.md) file for details.
 <img width="541" alt="app_icon" src="https://github.com/user-attachments/assets/a8f2bce0-7ec4-4c74-9e82-fad7bc9986bd" />
 
 ## 목차
@@ -192,10 +190,9 @@ A: 기존 번역물이 있는 자리는 건너뛰고 신규로 비어이있는 �
 
 기여하기 전에 프로젝트의 기여 가이드라인을 확인해주세요.
 
-## 라이선스
-
-이 프로젝트는 MIT 라이선스에 따라 라이선스가 부여됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
+## License
+This project is licensed under the MIT License - see the [LICENSE](license.md) file for details.
 
 ---
 
-© 2025 Korean Multi-Language Translator Team
+© 2025 joohwan.son
