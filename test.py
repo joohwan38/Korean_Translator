@@ -9,6 +9,7 @@ import time
 import traceback
 import sqlite3
 import pandas as pd
+import json
 import aiohttp
 import asyncio
 import re
@@ -57,7 +58,7 @@ class TranslationApp:
             self.root.minsize(650, 400)
 
             # 전역 폰트 설정
-            default_font = ("Segoe UI", 14)
+            default_font = ("Segoe UI", 13)
             self.root.option_add("*Font", default_font)
 
             # 전체 프레임
@@ -385,45 +386,58 @@ class TranslationApp:
         messagebox.showinfo("안내", "Ollama 서버 시작에 실패했습니다. 수동으로 Ollama를 실행해주세요.")
         return False
     
-    def install_model(self, model_name):
-        """지정된 모델 설치"""
-        logger.debug(f"install_model 시작: {model_name}")
-        try:
-            self.status_label.config(text=f"{model_name} 설치 중...")
-            self.root.update()
-            process = subprocess.Popen(["ollama", "pull", model_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            if process.returncode == 0:
-                self.status_label.config(text=f"{model_name} 설치 완료")
-                self.refresh_models()
-            else:
-                self.status_label.config(text=f"{model_name} 설치 실패: {stderr.decode()}")
-                messagebox.showerror("오류", f"{model_name} 설치 실패: {stderr.decode()}")
-        except Exception as e:
-            self.status_label.config(text=f"{model_name} 설치 오류: {str(e)}")
-            messagebox.showerror("오류", f"{model_name} 설치 오류: {str(e)}")
-
-    def refresh_models(self):
-        self.status_label.config(text="모델 목록 새로고침 중...")
-        self.clear_caches()
-        self.available_models = []
-        self.get_available_models()
-
     def get_available_models(self):
         try:
             response = requests.get("http://localhost:11434/api/tags", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                models = data.get("models", []) or data.get("Tags", []) or data
-                self.available_models = [model.get('name', model.get('Name', '')) for model in models if model.get('name') or model.get('Name')]
+                self.available_models = []
                 
+                # 데이터 타입에 따른 처리
+                if isinstance(data, dict):
+                    # 딕셔너리인 경우 models 또는 Tags 키 확인
+                    if "models" in data and isinstance(data["models"], list):
+                        models_list = data["models"]
+                    elif "Tags" in data and isinstance(data["Tags"], list):
+                        models_list = data["Tags"]
+                    else:
+                        # 적절한 키가 없으면 빈 리스트로 설정
+                        models_list = []
+                elif isinstance(data, list):
+                    # 데이터가 직접 리스트인 경우
+                    models_list = data
+                else:
+                    # 다른 타입의 경우 빈 리스트로 설정
+                    models_list = []
+                
+                # 모델 이름 추출 (안전하게)
+                for model in models_list:
+                    if isinstance(model, dict):
+                        # name 또는 Name 키 확인
+                        name = None
+                        if "name" in model and model["name"]:
+                            name = model["name"]
+                        elif "Name" in model and model["Name"]:
+                            name = model["Name"]
+                        
+                        if name:
+                            self.available_models.append(name)
+                
+                # 모델이 없으면 gemma3:12b 설치 시도
                 if not self.available_models:
-                    self.status_label.config(text="모델 없음. gemma3:12b 설치 시도...")
-                    self.install_model("gemma3:12b")
-                    self.available_models = ["설치 중..."]
+                    self.status_label.config(text="모델 없음. gemma3:12b 설치를 시작합니다...")
+                    self.available_models = ["설치 중...(약 5분 정도 소요 됨)"]
                     self.model_dropdown['values'] = self.available_models
+                    self.selected_model.set("설치 중...(약 5분 정도 소요 됨)")
+                    
+                    # 즉시 UI 업데이트
+                    self.root.update_idletasks()
+                    
+                    # 설치 시작 (약간의 지연 후)
+                    self.root.after(200, lambda: self.install_model("gemma3:12b"))
                     return
                 
+                # 모델 목록 정렬
                 preferred_models = ['gemma3:12b', 'grok', 'mistral']
                 sorted_models = sorted(self.available_models, 
                                     key=lambda x: (preferred_models.index(x) if x in preferred_models else len(preferred_models), x))
@@ -449,9 +463,156 @@ class TranslationApp:
             self.available_models = ["타임아웃"]
             self.model_dropdown['values'] = self.available_models
         except Exception as e:
-            self.status_label.config(text=f"모델 목록 가져오기 오류: {str(e)}")
+            error_msg = str(e)
+            logger.error(f"모델 목록 가져오기 오류: {error_msg}")
+            self.status_label.config(text=f"모델 목록 가져오기 오류: {error_msg[:50]}...")
             self.available_models = ["오류 발생"]
             self.model_dropdown['values'] = self.available_models
+
+    def install_model(self, model_name):
+        """API를 사용하여 모델 설치 및 진행률 표시 (상세 정보 포함)"""
+        logger.debug(f"install_model 시작: {model_name}")
+        
+        # 프로그레스 바 초기화
+        self.progress['value'] = 0
+        self.progress_text.set("0%")
+        self.status_label.config(text=f"{model_name} 설치 준비 중...")
+        self.root.update_idletasks()
+        
+        # 설치 스레드 실행
+        def run_installation():
+            try:
+                # 진행 표시 업데이트 함수
+                def update_progress(percent, message):
+                    self.root.after(0, lambda: self.progress.configure(value=percent))
+                    self.root.after(0, lambda: self.progress_text.set(f"{percent}%"))
+                    self.root.after(0, lambda: self.status_label.configure(text=message))
+                
+                update_progress(1, f"{model_name} 다운로드 시작...")
+                
+                # API를 통한 모델 다운로드
+                url = "http://localhost:11434/api/pull"
+                headers = {"Content-Type": "application/json"}
+                data = {"name": model_name}
+                
+                try:
+                    # 스트리밍 요청
+                    with requests.post(url, headers=headers, json=data, stream=True) as response:
+                        if response.status_code != 200:
+                            error_msg = f"API 오류: {response.status_code} - {response.text}"
+                            logger.error(error_msg)
+                            update_progress(0, error_msg)
+                            self.root.after(0, lambda e=error_msg: messagebox.showerror("API 오류", e))
+                            return
+                        
+                        start_time = time.time()
+                        last_update_time = start_time
+                        last_completed = 0
+                        download_speeds = []  # 다운로드 속도 이동 평균을 위한 리스트
+                        
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            
+                            try:
+                                status = json.loads(line.decode("utf-8"))
+                                
+                                # 진행률 계산
+                                if "total" in status and "completed" in status and status["total"] > 0:
+                                    total = status["total"]
+                                    completed = status["completed"]
+                                    progress_percent = min(99, int((completed / total) * 100))
+                                    
+                                    # 전체 용량 (MB 단위로 변환)
+                                    total_mb = total / (1024 * 1024)
+                                    completed_mb = completed / (1024 * 1024)
+                                    remaining_mb = total_mb - completed_mb
+                                    
+                                    # 다운로드 속도 계산 (MB/s)
+                                    current_time = time.time()
+                                    time_diff = current_time - last_update_time
+                                    
+                                    if time_diff > 0.5:  # 0.5초마다 속도 업데이트
+                                        bytes_diff = completed - last_completed
+                                        speed_mbps = (bytes_diff / time_diff) / (1024 * 1024)
+                                        
+                                        # 이동 평균을 위해 최근 5개 속도 유지
+                                        download_speeds.append(speed_mbps)
+                                        if len(download_speeds) > 5:
+                                            download_speeds.pop(0)
+                                        
+                                        # 평균 다운로드 속도
+                                        avg_speed = sum(download_speeds) / len(download_speeds)
+                                        
+                                        # 남은 시간 계산 (분 단위)
+                                        if avg_speed > 0:
+                                            est_remaining_sec = remaining_mb / avg_speed
+                                            est_remaining_min = est_remaining_sec / 60
+                                        else:
+                                            est_remaining_min = 5.0  # 기본값
+                                        
+                                        # 업데이트
+                                        last_update_time = current_time
+                                        last_completed = completed
+                                        
+                                        # 상태 메시지 형식화
+                                        status_msg = (
+                                            f"{model_name} 다운로드 중... {progress_percent}% "
+                                            f"({completed_mb:.1f}MB/{total_mb:.1f}MB) "
+                                            f"[{avg_speed:.1f}MB/s] "
+                                            f"(약 {est_remaining_min:.1f}분 남음)"
+                                        )
+                                        
+                                        update_progress(progress_percent, status_msg)
+                                    
+                                # 상태 메시지 처리
+                                elif "status" in status:
+                                    current_status = status["status"]
+                                    if current_status == "success":
+                                        update_progress(100, f"{model_name} 설치 완료!")
+                                    elif "downloading" in current_status:
+                                        if "progress" not in status:
+                                            elapsed_min = (time.time() - start_time) / 60
+                                            update_progress(
+                                                10, 
+                                                f"{model_name} 다운로드 준비 중... (경과 시간: {elapsed_min:.1f}분)"
+                                            )
+                                    elif "writing" in current_status:
+                                        update_progress(95, f"{model_name} 설치 마무리 중...")
+                                    elif "verifying" in current_status:
+                                        update_progress(97, f"{model_name} 설치 확인 중...")
+                                        
+                            except json.JSONDecodeError as e:
+                                logger.error(f"JSON 파싱 오류: {str(e)}, 라인: {line}")
+                            
+                            # UI 응답성 유지를 위한 업데이트
+                            self.root.update_idletasks()
+                        
+                        # 완료 처리
+                        update_progress(100, f"{model_name} 설치 완료!")
+                        self.root.after(1000, self.refresh_models)
+                        
+                except requests.RequestException as e:
+                    error_msg = f"API 요청 오류: {str(e)}"
+                    logger.error(error_msg)
+                    update_progress(0, error_msg)
+                    self.root.after(0, lambda e=error_msg: messagebox.showerror("API 오류", e))
+                    return
+                    
+            except Exception as e:
+                error_msg = f"{model_name} 설치 오류: {str(e)}"
+                logger.error(f"{error_msg}\n{traceback.format_exc()}")
+                self.root.after(0, lambda: self.status_label.config(text=error_msg))
+                self.root.after(0, lambda e=error_msg: messagebox.showerror("오류", e))
+        
+        # 설치 스레드 시작
+        threading.Thread(target=run_installation, daemon=True).start()
+
+    def refresh_models(self):
+        self.status_label.config(text="모델 목록 새로고침 중...")
+        self.clear_caches()
+        self.available_models = []
+        self.get_available_models()
 
     def check_ollama_status(self):
         """Ollama 서버 상태 확인"""
