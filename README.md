@@ -67,29 +67,16 @@
 
 
 
-### Windows 설치 (아직 만들지 않았음)
+### Windows 설치 (별도 설치 필요 없음)
 
 현재 Windows용 자동 설치 스크립트는 준비 중입니다. 다음 방법으로 설치하세요:
 
-#### 방법 1: 미리 빌드된 앱 설치하기
+#### 방법 1: 미리 빌드된 앱 실행하기 (Portable)
 
-1. [릴리스 페이지](https://github.com/yourusername/korean-translator/releases)에서 최신 버전의 `Korean.Translator.win.zip` 파일을 다운로드합니다.
-2. ZIP 파일을 원하는 위치에 압축 해제합니다.
+1. [Release 페이지](https://github.com/joohwan38/Korean_Translator/releases/tag/download) 에서 최신 버전의 `Korean.Translator.win.exe` 파일을 다운로드합니다.
+2. 설치를 원하는 위치에 폴더를 생성하고 exe 파일을 이동합니다
 3. 폴더 내의 `Korean Translator.exe` 파일을 실행합니다.
 
-#### 방법 2: 소스에서 직접 실행하기
-
-1. 이 저장소를 클론하거나 다운로드합니다.
-2. Python 3.8 이상이 설치되어 있는지 확인합니다.
-3. 명령 프롬프트를 관리자 권한으로 실행하고 다운로드한 폴더로 이동합니다.
-4. 필요한 패키지를 설치합니다:
-   ```bash
-   pip install pandas requests aiohttp pyinstaller
-   ```
-5. Python 스크립트를 직접 실행합니다:
-   ```bash
-   python translator_app.py
-   ```
 
 ## Ollama 설치 및 설정
 
