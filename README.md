@@ -115,8 +115,9 @@
 ### 엑셀 파일 형식
 
 1. 다음 형식으로 Excel 파일을 준비하세요:
-   - 시트 이름: "MessageSet" (정확히 일치해야 함)
-   - 필수 열: KO, EN, JA, ZH_HANT, TH, ES
+   - 시트 이름: "MessageSet" (정확히 일치해야 합니다. 시트이름 불일치를 꼭 확인하세요.)
+   - **필수 열: KO, EN, JA, ZH_HANT, TH, ES** (없으면 오류가 납니다.
+      (* 깃허브 저장소에서 [translate_templete.xlsx](https://github.com/joohwan38/Korean_Translator/releases/download/download/translate_templete.xlsx) 파일을 받아서 사용하셔도 좋습니다.)
    - "KO" 열에 번역할 한국어 텍스트를 입력하고, 나머지 열은 비워두세요 (번역될 예정)
 
 2. 예시:
@@ -177,7 +178,7 @@ A: 기존 번역물이 있는 자리는 건너뛰고 신규로 비어이있는 �
 ### 번역이 시작되지 않음
 - **증상**: "번역 시작" 버튼을 클릭해도 반응이 없음
 - **해결 방법**:
-  1. Excel 파일 형식이 올바른지 확인하세요 ("MessageSet" 시트와 필수 열)
+  1. Excel 파일 형식이 올바른지 확인하세요 ("MessageSet" 시트와 필수 열이 모두 맞는지)
   2. Ollama가 실행 중인지 확인하세요
   3. 애플리케이션을 재시작하세요
 
