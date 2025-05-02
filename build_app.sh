@@ -2,8 +2,8 @@
 # PyInstaller로 KoreanTranslator.app 생성
 
 # 의존성 설치
-pip install pyinstaller pandas requests aiohttp ttkbootstrap pyobjc-framework-Cocoa
-pip3 install pyinstaller pandas requests aiohttp ttkbootstrap pyobjc-framework-Cocoa
+pip install pyinstaller pandas requests aiohttp ttkbootstrap pyobjc-framework-Cocoa openpyxl
+pip3 install pyinstaller pandas requests aiohttp ttkbootstrap pyobjc-framework-Cocoa openpyxl
 
 # 기존 빌드 캐시 제거
 rm -rf build dist *.spec
