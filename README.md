@@ -55,7 +55,8 @@
 
 #### 방법 1: 미리 빌드된 앱 설치하기
 
-1. [릴리스 페이지](https://github.com/yourusername/korean-translator/releases)에서 최신 버전의 `Korean.Translator.dmg` 파일을 다운로드합니다.
+1. [Release 페이지](https://github.com/joohwan38/Korean_Translator/releases/tag/download) 에서 최신 버전의 `Korean.Translator.dmg` 파일을 다운로드합니다.
+(*만약 링크가 작동하지 않는다면 화면의 우측 사이드 메뉴 상단에 있으니 직접 저장소로 입장)
 2. 다운로드한 DMG 파일을 더블클릭하여 마운트합니다.
 3. `Korean Translator.app`을 애플리케이션 폴더로 드래그합니다.
 4. 동봉 된 readme.txt 파일을 읽어보세요.
