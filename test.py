@@ -573,10 +573,10 @@ class TranslationApp:
     def show_help(self):
         help_window = tk.Toplevel(self.root)
         help_window.title("도움말")
-        help_window.geometry("600x500")
+        help_window.geometry("600x700")
         tk.Label(help_window, text="Korean Translator 도움말", font=("Segoe UI", 16, "bold")).pack(pady=10)
         
-        text_widget = tk.Text(help_window, wrap=tk.WORD, width=70, height=25, padx=15, pady=15)
+        text_widget = tk.Text(help_window, wrap=tk.WORD, width=70, height=30, padx=15, pady=15)
         text_widget.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
         
         # 하이퍼링크 태그 설정
@@ -843,7 +843,7 @@ Just give the translated word or phrase and nothing else."""
 if __name__ == "__main__":
     logger.debug("메인 실행 시작")
     try:
-        root = ttk.Window(themename="flatly")
+        root = ttk.Window(themename="lumen")
         logger.debug("tkinter 루트 창 생성")
         
         # macOS에서 앱 아이콘 설정
