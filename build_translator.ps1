@@ -2,6 +2,15 @@
 Write-Host "==== Korean Translator Windows Build Script ====" -ForegroundColor Cyan
 Write-Host ""
 
+# Install dependencies
+Write-Host "Installing dependencies..." -ForegroundColor Green
+python -m pip install pyinstaller pandas requests aiohttp ttkbootstrap openpyxl
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error installing dependencies!" -ForegroundColor Red
+    Read-Host "Press any key to continue..."
+    exit 1
+}
+
 # Check working directory
 Write-Host "Current working directory: $((Get-Location).Path)" -ForegroundColor Yellow
 Write-Host "Checking paths..." -ForegroundColor Yellow
