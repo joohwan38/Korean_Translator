@@ -1,675 +1,512 @@
 #!/bin/bash
 
-# Mac용 한국어 다국어 번역기 설치 스크립트
-# 이 스크립트는 필요한 라이브러리를 설치하고 애플리케이션을 빌드합니다.
-# 같은 폴더의 test.py를 소스 코드로 사용하며, 없으면 내장 코드를 생성합니다.
+# 클릭으로 실행 가능한 한국어 다국어 번역기 DMG 생성 스크립트
+# macOS 환경에서 실행 가능한 앱 번들을 생성합니다
 
-# 색상 정의
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # 색상 초기화
+echo "===== 클릭으로 실행 가능한 한국어 다국어 번역기 DMG 패키징 스크립트 ====="
 
-echo -e "${GREEN}=======================================${NC}"
-echo -e "${GREEN}  Mac용 한국어 다국어 번역기 설치     ${NC}"
-echo -e "${GREEN}=======================================${NC}"
+# 작업 디렉토리 확인
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd "$SCRIPT_DIR"
+echo "현재 작업 디렉토리: $(pwd)"
 
-# Python이 설치되어 있는지 확인
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}오류: Python 3가 설치되어 있지 않습니다.${NC}"
-    echo "Python을 먼저 설치해주세요: https://www.python.org/downloads/"
+# 필요한 도구가 설치되어 있는지 확인
+check_command() {
+    if ! command -v $1 &> /dev/null; then
+        echo "$1이(가) 설치되어 있지 않습니다."
+        return 1
+    fi
+    return 0
+}
+
+# 필수 명령어 확인
+if ! check_command python3; then
+    echo "Python 3가 필요합니다. https://www.python.org/downloads/ 에서 설치해주세요."
+    echo "주의: python.org에서 공식 배포판을 사용하세요. Homebrew 등으로 설치한 Python은 Tkinter 문제가 발생할 수 있습니다."
     exit 1
 fi
 
-# 필요한 패키지 설치
-echo -e "\n${YELLOW}필요한 패키지를 설치합니다...${NC}"
-python3 -m pip install --upgrade pip
-python3 -m pip install pandas requests aiohttp sqlite3 pyinstaller
+# Python 설치 확인
+PYTHON_PATH=$(which python3)
+echo "사용 중인 Python 경로: $PYTHON_PATH"
+echo "Python 버전:"
+python3 -V
 
-# 앱 아이콘 준비
-echo -e "\n${YELLOW}앱 아이콘을 준비합니다...${NC}"
+# 필요한 Python 패키지 설치
+echo "필요한 Python 패키지 설치 중..."
+python3 -m pip install --user pandas openpyxl requests aiohttp pyinstaller pillow
 
-# 임시 아이콘 생성 (실제 배포 시에는 제대로 된 아이콘 파일 사용)
-if [ ! -f "app_icon.png" ]; then
-    echo "기본 아이콘을 생성합니다..."
-    python3 -c "
-import numpy as np
-from PIL import Image, ImageDraw
-
-# 1024x1024 크기의 이미지 생성
-img = Image.new('RGB', (1024, 1024), color=(255, 255, 255))
-draw = ImageDraw.Draw(img)
-
-# 배경 색상
-draw.rectangle([(0, 0), (1024, 1024)], fill=(66, 133, 244))
-
-# 'K' 글자 그리기 (간단한 디자인)
-draw.rectangle([(200, 200), (350, 800)], fill=(255, 255, 255))
-draw.polygon([(350, 500), (800, 200), (850, 300), (450, 550)], fill=(255, 255, 255))
-draw.polygon([(450, 550), (850, 800), (750, 850), (350, 500)], fill=(255, 255, 255))
-
-img.save('app_icon.png')
-"
+# 메인 Python 파일 확인
+MAIN_PY="test.py"
+if [ ! -f "$MAIN_PY" ]; then
+    echo "오류: $MAIN_PY 파일이 없습니다. 앱 소스코드가 들어있는 $MAIN_PY 파일이 현재 디렉토리에 있어야 합니다."
+    exit 1
 fi
+echo "소스 파일 발견: $MAIN_PY"
 
-# 아이콘 디렉토리 생성
-mkdir -p AppIcon.iconset
+# 경로 관련 패치를 적용할 것인지 확인
+echo "경로 관련 문제를 해결하기 위한 소스 코드 패치를 적용하시겠습니까? (y/n)"
+read -p "선택 (기본값: y): " PATCH_CHOICE
+PATCH_CHOICE=${PATCH_CHOICE:-y}
 
-# 다양한 크기의 아이콘 생성
-echo "아이콘 변환 중..."
-sips -z 16 16     app_icon.png --out AppIcon.iconset/icon_16x16.png
-sips -z 32 32     app_icon.png --out AppIcon.iconset/icon_16x16@2x.png
-sips -z 32 32     app_icon.png --out AppIcon.iconset/icon_32x32.png
-sips -z 64 64     app_icon.png --out AppIcon.iconset/icon_32x32@2x.png
-sips -z 128 128   app_icon.png --out AppIcon.iconset/icon_128x128.png
-sips -z 256 256   app_icon.png --out AppIcon.iconset/icon_128x128@2x.png
-sips -z 256 256   app_icon.png --out AppIcon.iconset/icon_256x256.png
-sips -z 512 512   app_icon.png --out AppIcon.iconset/icon_256x256@2x.png
-sips -z 512 512   app_icon.png --out AppIcon.iconset/icon_512x512.png
-sips -z 1024 1024 app_icon.png --out AppIcon.iconset/icon_512x512@2x.png
-
-# .icns 파일 생성
-iconutil -c icns AppIcon.iconset
-echo "AppIcon.icns 아이콘 생성 완료"
-
-# 소스 코드 파일 준비
-echo -e "\n${YELLOW}소스 코드 파일을 준비합니다...${NC}"
-if [ -f "test.py" ]; then
-    echo "test.py 파일을 발견했습니다. 이를 소스 코드로 사용합니다."
-    cp test.py translator_app.py
-    # test.py가 올바른 형식인지 간단히 확인 (TranslationApp 클래스 포함 여부)
-    if ! grep -q "class TranslationApp" test.py; then
-        echo -e "${RED}경고: test.py에 TranslationApp 클래스가 포함되어 있지 않습니다.${NC}"
-        echo "기본 소스 코드를 생성합니다."
-        rm -f translator_app.py
-        USE_TEST_PY=false
-    else
-        USE_TEST_PY=true
-    fi
-else
-    echo "test.py 파일이 없습니다. 기본 소스 코드를 생성합니다."
-    USE_TEST_PY=false
-fi
-
-# test.py가 없거나 유효하지 않은 경우 기본 소스 코드 생성
-if [ "$USE_TEST_PY" != "true" ]; then
-    cat > translator_app.py << 'EOF'
-import pandas as pd
-import requests
-import json
-import re
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import threading
+if [[ $PATCH_CHOICE == "y" || $PATCH_CHOICE == "Y" ]]; then
+    # 백업 생성
+    cp "$MAIN_PY" "${MAIN_PY}.bak"
+    echo "원본 파일 백업: ${MAIN_PY}.bak"
+    
+    # 소스 코드 첫 부분에 경로 관련 코드 추가
+    PATCH_CODE="
+# 이 코드는 PyInstaller로 패키징 시 경로 문제를 해결하기 위해 install.sh에 의해 추가되었습니다
 import os
 import sys
-import subprocess
-import time
-import sqlite3
-import aiohttp
-import asyncio
-from multiprocessing import Pool, cpu_count
-from concurrent.futures import ProcessPoolExecutor
 
-class TranslationApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Korean to Multi-Language Translator")
-        self.root.geometry("700x450")
-        self.root.minsize(650, 400)
+# 앱이 패키지된 경우 sys._MEIPASS 사용, 그렇지 않으면 현재 디렉토리 사용
+if getattr(sys, 'frozen', False):
+    # PyInstaller에 의해 패키징된 경우
+    bundle_dir = sys._MEIPASS
+    print(f'앱 번들 경로: {bundle_dir}')
+else:
+    # 일반 Python 스크립트로 실행된 경우
+    bundle_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f'스크립트 경로: {bundle_dir}')
 
-        # macOS에서 앱 아이콘 설정
-        if hasattr(sys, "_MEIPASS"):
-            app_path = os.path.join(sys._MEIPASS, "AppIcon.icns")
-            if os.path.exists(app_path):
-                self.root.iconbitmap(app_path)
+# 아래 코드는 원본 소스 코드입니다
+"
 
-        # 전체 프레임
-        main_frame = tk.Frame(root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-
-        # Variables
-        self.file_path = tk.StringVar()
-        self.is_running = False
-        self.stop_requested = False
-        self.ollama_status = tk.StringVar(value="확인 중...")
-        self.selected_model = tk.StringVar(value="llama3.2")  # 기본 모델: llama3.2
-        self.available_models = []
-        self.translation_cache = {}  # 메모리 내 캐시
-        self.languages = ["EN", "JA", "ZH_HANT", "TH", "ES"]
-        self.language_names = {
-            "EN": "영어 (English)",
-            "JA": "일본어 (Japanese)",
-            "ZH_HANT": "중국어 번체 (Chinese Traditional)",
-            "TH": "태국어 (Thai)",
-            "ES": "스페인어 (Spanish)"
-        }
-
-        # 영구 캐시 초기화 (SQLite)
-        self.init_cache_db()
-
-        # GUI Elements
-        header_frame = tk.Frame(main_frame)
-        header_frame.pack(fill=tk.X, pady=10)
-        tk.Label(header_frame, text="한국어 다국어 번역기", font=("Arial", 18, "bold")).pack(side=tk.LEFT)
-        self.status_indicator = tk.Canvas(header_frame, width=15, height=15, bg="yellow")
-        self.status_indicator.pack(side=tk.RIGHT, padx=5)
-        tk.Label(header_frame, textvariable=self.ollama_status).pack(side=tk.RIGHT)
-
-        # File selection
-        file_frame = tk.Frame(main_frame)
-        file_frame.pack(fill=tk.X, pady=10)
-        tk.Label(file_frame, text="Excel 파일:").pack(side=tk.LEFT)
-        tk.Entry(file_frame, textvariable=self.file_path, width=40).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        browse_button = tk.Button(file_frame, text="찾아보기", command=self.browse_file, width=8)
-        browse_button.pack(side=tk.RIGHT)
-
-        # 모델 선택 드롭다운
-        model_frame = tk.Frame(main_frame)
-        model_frame.pack(fill=tk.X, pady=10)
-        tk.Label(model_frame, text="번역 모델:").pack(side=tk.LEFT)
-        self.model_dropdown = ttk.Combobox(model_frame, textvariable=self.selected_model, state="readonly")
-        self.model_dropdown.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        refresh_button = tk.Button(model_frame, text="새로고침", command=self.refresh_models, width=8)
-        refresh_button.pack(side=tk.RIGHT)
-
-        # Progress frame
-        progress_frame = tk.Frame(main_frame)
-        progress_frame.pack(fill=tk.X, pady=10)
-        self.progress = ttk.Progressbar(progress_frame, length=500, mode='determinate')
-        self.progress.pack(fill=tk.X, pady=5)
-        self.progress_text = tk.StringVar(value="0%")
-        tk.Label(progress_frame, textvariable=self.progress_text).pack()
-
-        # Status label
-        self.status_label = tk.Label(main_frame, text="준비 완료", wraplength=500, height=3, anchor="w", justify=tk.LEFT)
-        self.status_label.pack(fill=tk.X, pady=10)
-
-        # Buttons frame
-        button_frame = tk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=10)
-        self.start_button = tk.Button(button_frame, text="번역 시작", command=self.start_translation, 
-                                      bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), 
-                                      width=12, height=2)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-        self.stop_button = tk.Button(button_frame, text="번역 중지", command=self.stop_translation, 
-                                     bg="#f44336", fg="white", font=("Arial", 12, "bold"), 
-                                     width=12, height=2, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
-        help_button = tk.Button(button_frame, text="도움말", command=self.show_help,
-                              font=("Arial", 12), width=10, height=2)
-        help_button.pack(side=tk.RIGHT, padx=5)
-        check_button = tk.Button(button_frame, text="Ollama 확인", command=self.check_ollama_status,
-                              font=("Arial", 12), width=12, height=2)
-        check_button.pack(side=tk.RIGHT, padx=5)
-
-        # Ollama API endpoint
-        self.ollama_url = "http://localhost:11434/api/generate"
-
-        # Check Ollama status and get models
-        self.check_ollama_status()
-
-    def init_cache_db(self):
-        """SQLite 영구 캐시 초기화"""
-        self.conn = sqlite3.connect("translation_cache.db")
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS translations (
-                text TEXT,
-                lang TEXT,
-                translation TEXT,
-                PRIMARY KEY (text, lang)
-            )
-        """)
-        self.conn.commit()
-
-    def get_cached_translation(self, text, target_lang):
-        """캐시에서 번역 조회 (메모리 → SQLite)"""
-        cache_key = f"{text}:{target_lang}"
-        if cache_key in self.translation_cache:
-            return self.translation_cache[cache_key]
-        cursor = self.conn.execute("SELECT translation FROM translations WHERE text = ? AND lang = ?",
-                                  (text, target_lang))
-        result = cursor.fetchone()
-        if result:
-            self.translation_cache[cache_key] = result[0]
-            return result[0]
-        return None
-
-    def cache_translation(self, text, target_lang, translation):
-        """번역 결과를 캐시에 저장 (메모리 + SQLite)"""
-        cache_key = f"{text}:{target_lang}"
-        self.translation_cache[cache_key] = translation
-        self.conn.execute("INSERT OR REPLACE INTO translations (text, lang, translation) VALUES (?, ?, ?)",
-                         (text, target_lang, translation))
-        self.conn.commit()
-
-    def update_progress(self, value, total, message):
-        """프로그레스 바와 상태 메시지 업데이트 (주기적 호출 최적화)"""
-        if not hasattr(self, '_last_update') or time.time() - self._last_update > 0.5:
-            self._last_update = time.time()
-            percentage = int((value / total) * 100) if total > 0 else 0
-            self.root.after(0, lambda: self.progress.configure(value=value))
-            self.root.after(0, lambda: self.progress_text.set(f"{percentage}%"))
-            self.root.after(0, lambda: self.status_label.configure(text=message))
-
-    def refresh_models(self):
-        """사용 가능한 Ollama 모델 목록 새로고침"""
-        self.status_label.config(text="모델 목록 새로고침 중...")
-        self.available_models = []
-        self.get_available_models()
-
-    def get_available_models(self):
-        """사용 가능한 Ollama 모델 목록 가져오기 (경량 모델 우선)"""
-        try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                models = data.get("models", []) or data.get("Tags", []) or data
-                self.available_models = [model.get('name', model.get('Name', '')) for model in models if model.get('name') or model.get('Name')]
-                
-                if not self.available_models:
-                    self.status_label.config(text="사용 가능한 모델 없음. 'ollama pull'로 모델 설치 필요.")
-                    self.available_models = ["모델 없음"]
-                
-                # 모델 우선순위: llama3.2 → 경량 모델(grok, mistral) → 기타
-                preferred_models = ['llama3.2', 'grok', 'mistral']
-                sorted_models = sorted(self.available_models, 
-                                    key=lambda x: (preferred_models.index(x) if x in preferred_models else len(preferred_models), x))
-                self.available_models = sorted_models
-
-                self.model_dropdown['values'] = self.available_models
-                if 'llama3.2' in self.available_models:
-                    self.selected_model.set('llama3.2')
-                elif self.available_models:
-                    self.selected_model.set(self.available_models[0])
-                
-                self.status_label.config(text=f"{len(self.available_models)}개의 모델 발견")
-            else:
-                self.status_label.config(text="Ollama API 응답 오류")
-                self.available_models = ["API 오류"]
-                self.model_dropdown['values'] = self.available_models
-        except requests.exceptions.ConnectionError:
-            self.status_label.config(text="Ollama 서버 연결 실패")
-            self.available_models = ["연결 오류"]
-            self.model_dropdown['values'] = self.available_models
-        except requests.exceptions.Timeout:
-            self.status_label.config(text="Ollama 서버 응답 시간 초과")
-            self.available_models = ["타임아웃"]
-            self.model_dropdown['values'] = self.available_models
-        except Exception as e:
-            self.status_label.config(text=f"모델 목록 가져오기 오류: {str(e)}")
-            self.available_models = ["오류 발생"]
-            self.model_dropdown['values'] = self.available_models
-
-    def check_ollama_status(self):
-        """Ollama 서버 상태 확인"""
-        try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=5)
-            if response.status_code == 200:
-                self.ollama_status.set("Ollama 실행 중")
-                self.status_indicator.config(bg="green")
-                self.get_available_models()
-            else:
-                self.ollama_status.set("Ollama 응답 오류")
-                self.status_indicator.config(bg="red")
-        except requests.exceptions.ConnectionError:
-            self.ollama_status.set("Ollama 실행 필요")
-            self.status_indicator.config(bg="red")
-            self.start_ollama()
-        except requests.exceptions.Timeout:
-            self.ollama_status.set("Ollama 응답 시간 초과")
-            self.status_indicator.config(bg="red")
-        except Exception as e:
-            self.ollama_status.set(f"오류: {str(e)[:15]}...")
-            self.status_indicator.config(bg="red")
-
-    def start_ollama(self):
-        """Ollama 시작 시도"""
-        try:
-            result = messagebox.askyesno("Ollama 실행", "Ollama가 실행되고 있지 않습니다. 실행하시겠습니까?")
-            if result:
-                subprocess.Popen(["open", "-a", "Ollama"])
-                self.status_label.config(text="Ollama 실행 중... 잠시 후 확인")
-        except Exception as e:
-            messagebox.showerror("오류", f"Ollama 실행 실패: {str(e)}")
-
-    def show_help(self):
-        """도움말 창 표시"""
-        help_text = """
-        [사용 방법]
-        1. Ollama가 설치 및 실행 중인지 확인.
-        2. 드롭다운에서 모델 선택 (권장: llama3.2 또는 grok/mistral).
-        3. '찾아보기'로 Excel 파일 선택.
-        4. '번역 시작' 클릭.
-        5. 중지하려면 '번역 중지' 클릭.
-
-        [엑셀 파일 형식]
-        - "MessageSet" 시트 필요.
-        - 열: KO, EN, JA, ZH_HANT, TH, ES
-        - KO 열에 한국어 입력, 나머지 비어 있으면 번역.
-
-        [모델 추가]
-        - 터미널에서 'ollama pull llama3.2' 등 실행.
-        - 추가 후 '새로고침' 클릭.
-
-        [문제 해결]
-        - '확인 중...' 지속 시 Ollama 설치 확인.
-        - 모델 목록 없으면 '새로고침' 클릭.
-        - 오류 시 '번역 중지' 후 재시도.
-        """
-        help_window = tk.Toplevel(self.root)
-        help_window.title("도움말")
-        help_window.geometry("500x450")
-        tk.Label(help_window, text="Korean Translator 도움말", font=("Arial", 16, "bold")).pack(pady=10)
-        text_widget = tk.Text(help_window, wrap=tk.WORD, width=60, height=20)
-        text_widget.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
-        text_widget.insert(tk.END, help_text)
-        text_widget.config(state=tk.DISABLED)
-        tk.Button(help_window, text="닫기", command=help_window.destroy).pack(pady=10)
-
-    def browse_file(self):
-        file = filedialog.askopenfilename(filetypes=[("Excel 파일", "*.xlsx")])
-        if file:
-            self.file_path.set(file)
-            self.status_label.config(text=f"선택된 파일: {os.path.basename(file)}")
-
-    def create_prompt(self, korean_text, target_lang):
-        """최적화된 프롬프트 생성"""
-        return f"Translate from Korean to {target_lang}: '{korean_text}'"
-
-    def clean_translation(self, text):
-        """LLM 응답 정제"""
-        text = re.sub(r'^[\s\'\""`]*', '', text)
-        text = re.sub(r'[\s\'\""`]*$', '', text)
-        prefixes = [
-            r'번역\s*:', r'번역은\s*:', r'translation\s*:', r'translated text\s*:',
-            r'is\s*:', r'in \w+\s*:', r'the translation is\s*:',
-            r'translation of the text\s*:', r'here is the \w+ translation\s*:'
-        ]
-        pattern = '|'.join(prefixes)
-        text = re.sub(fr'(?i)^(.*?({pattern}))', '', text)
-        text = re.sub(r'[\*\`\#]', '', text)
-        return text.strip()
-
-    async def translate_async(self, text, target_lang, session, max_retries=3):
-        """비동기 번역 요청"""
-        if self.stop_requested:
-            return text
-        cached = self.get_cached_translation(text, target_lang)
-        if cached:
-            return cached
-        model = self.selected_model.get()
-        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃"]:
-            self.root.after(0, lambda: messagebox.showerror("오류", "유효한 모델 선택 필요"))
-            return text
-        prompt = self.create_prompt(text, target_lang)
-        payload = {"model": model, "prompt": prompt, "stream": False, "temperature": 0.0}
-        for attempt in range(max_retries):
-            if self.stop_requested:
-                return text
-            try:
-                async with session.post(self.ollama_url, json=payload, timeout=30) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-                    translated = self.clean_translation(result["response"])
-                    self.cache_translation(text, target_lang, translated)
-                    return translated
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    continue
-                self.update_progress(self.progress['value'], self.progress['maximum'], 
-                                   f"{target_lang} 번역 오류: {str(e)}")
-                return text
-        return text
-
-    async def translate_batch_async(self, texts, target_lang, batch_size=10):
-        """비동기 배치 번역"""
-        results = []
-        async with aiohttp.ClientSession() as session:
-            for i in range(0, len(texts), batch_size):
-                if self.stop_requested:
-                    break
-                batch = texts[i:i + batch_size]
-                tasks = [self.translate_async(text, target_lang, session) for text in batch]
-                batch_results = await asyncio.gather(*tasks)
-                results.extend(batch_results)
-        return results
-
-    def translate_worker(self, args):
-        """멀티프로세싱 작업자 함수"""
-        text, lang, model, ollama_url = args
-        if text in self.translation_cache:
-            return self.translation_cache[text]
-        prompt = f"Translate from Korean to {lang}: '{text}'"
-        payload = {"model": model, "prompt": prompt, "stream": False, "temperature": 0.0}
-        try:
-            response = requests.post(ollama_url, json=payload, timeout=30)
-            response.raise_for_status()
-            translated = self.clean_translation(response.json()["response"])
-            self.cache_translation(text, lang, translated)
-            return translated
-        except:
-            return text
-
-    def stop_translation(self):
-        """번역 작업 중지"""
-        if self.is_running:
-            self.stop_requested = True
-            self.update_progress(self.progress['value'], self.progress['maximum'], 
-                               "번역 중지 요청됨...")
-
-    def validate_prerequisites(self):
-        """필수 조건 검증"""
-        if not self.file_path.get():
-            messagebox.showerror("오류", "Excel 파일 선택 필요")
-            return False
-        model = self.selected_model.get()
-        if not model or model in ["모델 없음", "API 오류", "연결 오류", "오류 발생", "타임아웃"]:
-            messagebox.showerror("오류", "유효한 모델 선택 필요")
-            return False
-        try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=5)
-            if response.status_code != 200:
-                messagebox.showerror("오류", "Ollama 서버 응답 없음")
-                return False
-        except requests.exceptions.ConnectionError:
-            messagebox.showerror("오류", "Ollama 서버 연결 실패")
-            return False
-        except requests.exceptions.Timeout:
-            messagebox.showerror("오류", "Ollama 서버 응답 시간 초과")
-            return False
-        return True
-
-    def translate_excel(self):
-        """엑셀 파일 번역"""
-        file_path = self.file_path.get()
-        try:
-            df = pd.read_excel(file_path, sheet_name="MessageSet")
-            required_columns = ["KO"] + self.languages
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                messagebox.showerror("오류", f"누락된 열: {', '.join(missing_columns)}")
-                self.is_running = False
-                self.start_button.config(state="normal")
-                self.stop_button.config(state="disabled")
-                self.stop_requested = False
-                return
-            for lang in self.languages:
-                df[lang] = df[lang].astype(str).replace("nan", "")
-            korean_texts = df["KO"].dropna()
-            total_texts = len(korean_texts)
-            total_translations = total_texts * len(self.languages)
-            self.progress['maximum'] = total_translations
-            self.update_progress(0, total_translations, 
-                               f"번역할 텍스트: {total_texts}, 총 번역: {total_translations}")
-
-            translation_queue = []
-            for idx, row in df.iterrows():
-                korean_text = row["KO"]
-                if pd.notna(korean_text) and str(korean_text).strip():
-                    for lang in self.languages:
-                        if not row[lang] or str(row[lang]).lower() == "nan" or not str(row[lang]).strip():
-                            translation_queue.append((idx, korean_text, lang))
-
-            progress_count = 0
-            # 멀티프로세싱 풀 설정
-            num_processes = min(cpu_count(), 4)  # CPU 코어 수 또는 최대 4
-            with ProcessPoolExecutor(max_workers=num_processes) as executor:
-                for idx, korean_text, lang in translation_queue:
-                    if self.stop_requested:
-                        self.update_progress(progress_count, total_translations, "번역 중지됨")
-                        messagebox.showinfo("알림", "번역 중단. 처리된 내용 저장")
-                        break
-                    lang_name = self.language_names.get(lang, lang)
-                    self.update_progress(progress_count, total_translations, 
-                                       f"텍스트 {progress_count+1}/{len(translation_queue)} 번역 중... 언어: {lang_name}")
-                    
-                    # 비동기 배치 번역 호출
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    translated_texts = loop.run_until_complete(
-                        self.translate_batch_async([korean_text], lang)
-                    )
-                    loop.close()
-                    df.at[idx, lang] = translated_texts[0]
-                    progress_count += 1
-
-            base_name = os.path.splitext(file_path)[0]
-            output_file = f"{base_name}_Translated.xlsx"
-            counter = 1
-            while os.path.exists(output_file):
-                output_file = f"{base_name}_Translated_{counter}.xlsx"
-                counter += 1
-            df.to_excel(output_file, sheet_name="MessageSet", index=False)
-            final_message = f"번역 {'중지' if self.stop_requested else '완료'}: {os.path.basename(output_file)}"
-            self.update_progress(progress_count, total_translations, final_message)
-            if messagebox.askyesno("성공", f"{final_message}\n폴더 열기?"):
-                self.open_file_location(output_file)
-            else:
-                messagebox.showinfo("성공", final_message)
-        except Exception as e:
-            self.update_progress(self.progress['value'], self.progress['maximum'], f"오류: {str(e)}")
-            messagebox.showerror("오류", f"오류 발생: {str(e)}")
-        self.is_running = False
-        self.stop_requested = False
-        self.start_button.config(state="normal")
-        self.stop_button.config(state="disabled")
-
-    def open_file_location(self, file_path):
-        """파일 폴더 열기"""
-        try:
-            folder_path = os.path.dirname(os.path.abspath(file_path))
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", folder_path])
-            elif sys.platform == "win32":
-                os.startfile(folder_path)
-            else:
-                subprocess.Popen(["xdg-open", folder_path])
-        except Exception as e:
-            messagebox.showerror("오류", f"폴더 열기 실패: {str(e)}")
-
-    def start_translation(self):
-        """번역 시작"""
-        if self.is_running:
-            return
-        if not self.validate_prerequisites():
-            return
-        self.is_running = True
-        self.stop_requested = False
-        self.start_button.config(state="disabled")
-        self.stop_button.config(state="normal")
-        self.progress['value'] = 0
-        self.progress_text.set("0%")
-        self.update_progress(0, 100, f"번역 시작... 모델: {self.selected_model.get()}")
-        threading.Thread(target=self.translate_excel, daemon=True).start()
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = TranslationApp(root)
-    root.mainloop()
-EOF
+    # 소스 코드 패치 적용
+    TMP_FILE="${MAIN_PY}.tmp"
+    echo "$PATCH_CODE" > "$TMP_FILE"
+    cat "$MAIN_PY" >> "$TMP_FILE"
+    mv "$TMP_FILE" "$MAIN_PY"
+    echo "소스 코드에 경로 관련 패치가 적용되었습니다."
+else
+    echo "패치 적용을 건너뜁니다."
 fi
+
+# 시작 시 기존 빌드 정리
+echo "기존 빌드 정리 중..."
+rm -rf build dist *.spec
+
+# 기존 앱 삭제 (테스트용으로 /Applications에 설치했다면)
+sudo rm -rf /Applications/한국어다국어번역기.app
+
+# 임시 파일 제거
+rm -f *.tmp *.bak runtime_hook.py entitlements.plist
+
+
+# 기존 PNG 아이콘을 ICNS로 변환
+PNG_ICON="app_icon.png"
+ICON_FILE="AppIcon.icns"
+
+if [ ! -f "$PNG_ICON" ]; then
+    echo "오류: app_icon.png 파일을 찾을 수 없습니다."
+    exit 1
+fi
+
+echo "기존 PNG 아이콘을 ICNS로 변환 중..."
+# 임시 디렉토리 생성
+ICONSET_DIR="AppIcon.iconset"
+mkdir -p "$ICONSET_DIR"
+
+# 다양한 크기로 아이콘 생성
+for size in 16 32 64 128 256 512; do
+    # 일반 해상도
+    sips -z $size $size "$PNG_ICON" --out "$ICONSET_DIR/icon_${size}x${size}.png" &>/dev/null
+    
+    # 레티나 해상도 (@2x)
+    if [ $size -le 512 ]; then
+        sips -z $((size*2)) $((size*2)) "$PNG_ICON" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" &>/dev/null
+    fi
+done
+
+# iconutil로 .icns 파일 생성
+if command -v iconutil &> /dev/null; then
+    iconutil -c icns "$ICONSET_DIR"
+    echo "아이콘 파일 생성 완료: $ICON_FILE"
+else
+    echo "경고: iconutil 명령어를 찾을 수 없습니다. macOS에서 실행해주세요."
+    exit 1
+fi
+
+# 임시 디렉토리 정리
+rm -rf "$ICONSET_DIR"
+
+# 런타임 훅 스크립트 생성 (macOS 앱 번들 경로 처리용)
+cat > "runtime_hook.py" << EOL
+# -*- coding: utf-8 -*-
+import os
+import sys
+import tkinter as tk
+
+# macOS 앱 번들 실행 시 필요한 설정
+def _setup_macos_app_environment():
+    # 앱 번들 모드에서 올바른 경로 설정
+    if getattr(sys, 'frozen', False):
+        bundle_dir = sys._MEIPASS
+        os.environ['PATH'] = os.path.join(bundle_dir, 'bin') + ':' + os.environ['PATH']
+        
+        # Tkinter 초기화 전에 메인 윈도우 설정
+        # 이 설정은 macOS에서 Tkinter 앱이 클릭으로 실행될 때 필요함
+        try:
+            tk.Tk.report_callback_exception = lambda self, exc, val, tb: print(f"Error: {val}")
+        except:
+            pass
+
+# 환경 설정 실행
+_setup_macos_app_environment()
+EOL
+
+# PyInstaller .spec 파일 생성
+echo "PyInstaller .spec 파일 생성 중..."
+cat > "한국어다국어번역기.spec" << EOL
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+# macOS 앱 번들용 추가 파일 목록
+added_files = [
+    ('${ICON_FILE}', '.'),
+    ('${PNG_ICON}', '.'),
+]
+
+# 주요 분석 설정
+a = Analysis(
+    ['${MAIN_PY}'],
+    pathex=[],
+    binaries=[],
+    datas=added_files,
+    hiddenimports=[
+        'pandas', 'numpy', 'openpyxl', 'xlrd', 'requests', 'aiohttp', 'asyncio', 
+        'tkinter', 'tkinter.filedialog', 'tkinter.messagebox', 'tkinter.ttk',
+        'sqlite3', 'threading', 'json', 're', 'subprocess', 'time', 'sys', 'os'
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=['runtime_hook.py'],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+# 유효하지 않은 모듈 제거
+def remove_invalid_modules(modules):
+    valid_modules = []
+    for module in modules:
+        if isinstance(module, tuple) and len(module) >= 2:
+            valid_modules.append(module)
+    return valid_modules
+
+# 중복 모듈 제거
+a.binaries = remove_invalid_modules(a.binaries)
+a.datas = remove_invalid_modules(a.datas)
+
+# PYZ 아카이브 생성
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+# 실행 파일 설정
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='한국어다국어번역기',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,  # GUI 모드로 설정 (클릭으로 실행 시 콘솔 창 숨김)
+    disable_windowed_traceback=False,
+    argv_emulation=True,  # macOS에서 중요한 옵션
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='${ICON_FILE}',
+)
+
+# 파일 수집 설정
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='한국어다국어번역기',
+)
+
+# macOS 앱 번들 설정
+app = BUNDLE(
+    coll,
+    name='한국어다국어번역기.app',
+    icon='${ICON_FILE}',
+    bundle_identifier='com.translator.koreantranslator',
+    info_plist={
+        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleName': '한국어다국어번역기',
+        'NSPrincipalClass': 'NSApplication',
+        'NSHighResolutionCapable': 'True',
+        'NSRequiresAquaSystemAppearance': 'False',
+        'CFBundleDisplayName': '한국어다국어번역기',
+        'CFBundleGetInfoString': '한국어 다국어 번역기',
+        'LSMinimumSystemVersion': '10.13.0',
+        'CFBundleDocumentTypes': [
+            {
+                'CFBundleTypeName': 'Excel 문서',
+                'CFBundleTypeExtensions': ['xlsx', 'xls'],
+                'CFBundleTypeRole': 'Editor',
+            }
+        ],
+        'NSAppleEventsUsageDescription': '이 앱은 외부 프로그램과 통신하기 위해 Apple 이벤트를 사용합니다.',
+        'NSHumanReadableCopyright': 'Copyright © 2024 All rights reserved.',
+    },
+)
+EOL
 
 # PyInstaller로 앱 빌드
-echo -e "\n${YELLOW}애플리케이션을 빌드합니다...${NC}"
-python3 -m PyInstaller --name "Korean Translator" --windowed --onefile --icon=AppIcon.icns translator_app.py --add-data "AppIcon.icns:."
+echo "PyInstaller로 애플리케이션 빌드 중..."
+python3 -m PyInstaller --clean --noconfirm 한국어다국어번역기.spec
 
-# 템플릿 생성 스크립트 추가
-cat > create_template.py << 'EOF'
-import pandas as pd
-import os
-
-def create_translation_template():
-    """한국어 다국어 번역을 위한 엑셀 템플릿을 생성합니다."""
-    
-    # 샘플 데이터 생성
-    data = {
-        'Key': ['MSG_001', 'MSG_002', 'MSG_003', 'MSG_004', 'MSG_005'],
-        'KO': ['환영합니다', '로그인하세요', '비밀번호를 잊으셨나요?', '회원가입', '저장'],
-        'EN': ['', '', '', '', ''],
-        'JA': ['', '', '', '', ''],
-        'ZH_HANT': ['', '', '', '', ''],
-        'TH': ['', '', '', '', ''],
-        'ES': ['', '', '', '', '']
-    }
-    
-    # DataFrame 생성
-    df = pd.DataFrame(data)
-    
-    # 현재 사용자의 바탕화면 경로 가져오기
-    desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
-    
-    # 파일 저장
-    template_path = os.path.join(desktop, 'Translation_Template.xlsx')
-    df.to_excel(template_path, sheet_name='MessageSet', index=False)
-    
-    print(f"번역 템플릿이 생성되었습니다: {template_path}")
-    return template_path
-
-if __name__ == "__main__":
-    create_translation_template()
-EOF
-
-# 빌드 결과 확인
-if [ -f "dist/Korean Translator.app/Contents/MacOS/Korean Translator" ]; then
-    echo -e "\n${GREEN}빌드 성공!${NC}"
-    echo "애플리케이션이 dist 폴더에 생성되었습니다."
-    
-    # DMG 생성 (create-dmg가 설치된 경우)
-    if command -v create-dmg &> /dev/null; then
-        echo -e "\n${YELLOW}DMG 파일을 생성합니다...${NC}"
-        create-dmg \
-            --volname "Korean Translator" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "Korean Translator.app" 200 190 \
-            --app-drop-link 400 190 \
-            "Korean Translator.dmg" \
-            "dist/Korean Translator.app"
-        echo -e "${GREEN}DMG 파일 생성 완료!${NC}"
-    else
-        echo -e "\n${YELLOW}DMG 생성을 건너뜁니다 (create-dmg가 설치되어 있지 않음)${NC}"
-        echo "DMG 생성을 원하시면 'brew install create-dmg'를 실행한 후 다시 시도하세요."
-    fi
-    
-    # 템플릿 생성
-    echo -e "\n${YELLOW}번역 템플릿을 생성합니다...${NC}"
-    python3 create_template.py
-    
-    echo -e "\n${GREEN}설치가 완료되었습니다!${NC}"
-    echo -e "애플리케이션을 실행하기 전에 Ollama가 설치되어 있어야 합니다."
-    echo -e "Ollama 다운로드: https://ollama.ai/download"
-else
-    echo -e "\n${RED}빌드 실패!${NC}"
-    echo "오류 로그를 확인하세요."
+BUILD_RESULT=$?
+if [ $BUILD_RESULT -ne 0 ]; then
+    echo "애플리케이션 빌드에 실패했습니다."
+    exit 1
 fi
 
-# 정리
-echo -e "\n${YELLOW}임시 파일을 정리합니다...${NC}"
-rm -rf build
-rm -rf AppIcon.iconset
-rm -f *.spec
-rm -f translator_app.py  # 생성된 소스 코드 정리 (test.py 유지)
+# 앱번들 확인
+APP_NAME="한국어다국어번역기.app"
+APP_PATH="dist/$APP_NAME"
 
-echo -e "\n${GREEN}완료되었습니다.${NC}"
+if [ ! -d "$APP_PATH" ]; then
+    echo "앱 빌드에 실패했습니다."
+    exit 1
+fi
+
+# 앱 권한 및 속성 설정
+echo "앱 실행 권한 및 속성 설정 중..."
+chmod -R +x "$APP_PATH/Contents/MacOS/"
+
+# 앱 확장 속성 제거 (quarantine 등)
+xattr -cr "$APP_PATH"
+
+# macOS .app 번들 특수 권한 설정 
+if [ -d "$APP_PATH/Contents/MacOS" ]; then
+    chmod +x "$APP_PATH/Contents/MacOS/"*
+fi
+
+# Info.plist 확인
+echo "Info.plist 확인 중..."
+cat "$APP_PATH/Contents/Info.plist"
+
+# 코드 서명 적용 (개선된 버전)
+echo "애플리케이션에 개선된 코드 서명 적용 중..."
+
+# 실행 파일 확인 및 수정
+EXEC_PATH="$APP_PATH/Contents/MacOS/한국어다국어번역기"
+if [ ! -f "$EXEC_PATH" ]; then
+    echo "경고: 실행 파일이 없습니다. 찾는 중..."
+    
+    # MacOS 디렉토리의 모든 실행 파일 찾기
+    EXEC_FILES=$(find "$APP_PATH/Contents/MacOS/" -type f)
+    if [ -n "$EXEC_FILES" ]; then
+        FIRST_EXEC=$(echo "$EXEC_FILES" | head -1)
+        cp "$FIRST_EXEC" "$EXEC_PATH"
+        chmod +x "$EXEC_PATH"
+        echo "실행 파일을 복사했습니다: $FIRST_EXEC -> 한국어다국어번역기"
+    else
+        echo "오류: MacOS 디렉토리에 실행 파일이 없습니다."
+        exit 1
+    fi
+fi
+
+# 코드 서명하기 전에 Info.plist 확인 및 수정
+/usr/libexec/PlistBuddy -c "Delete :CFBundleExecutable" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string 한국어다국어번역기" "$APP_PATH/Contents/Info.plist"
+
+# 리소스 확인
+if [ ! -d "$APP_PATH/Contents/Resources" ]; then
+    mkdir -p "$APP_PATH/Contents/Resources"
+fi
+
+# 아이콘 파일 확인
+if [ -f "${ICON_FILE}" ] && [ ! -f "$APP_PATH/Contents/Resources/${ICON_FILE}" ]; then
+    cp "${ICON_FILE}" "$APP_PATH/Contents/Resources/"
+fi
+
+# 먼저 모든 코드 서명 제거
+echo "기존 코드 서명 제거 중..."
+codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+
+# 확장 속성 제거
+echo "확장 속성 제거 중..."
+xattr -cr "$APP_PATH"
+
+# 모든 바이너리 파일에 개별적으로 서명
+echo "개별 바이너리 파일에 서명 중..."
+find "$APP_PATH/Contents/Frameworks" -type f -name "*.so" -exec codesign --force --sign - {} \; 2>/dev/null || true
+find "$APP_PATH/Contents/Frameworks" -type f -name "*.dylib" -exec codesign --force --sign - {} \; 2>/dev/null || true
+
+# Python 라이브러리에 특별히 서명
+if [ -f "$APP_PATH/Contents/Frameworks/libpython3.12.dylib" ]; then
+    echo "Python 라이브러리에 서명 중..."
+    codesign --force --sign - "$APP_PATH/Contents/Frameworks/libpython3.12.dylib"
+fi
+
+# 실행 파일에 서명
+echo "실행 파일에 서명 중..."
+chmod +x "$APP_PATH/Contents/MacOS/한국어다국어번역기"
+codesign --force --sign - "$APP_PATH/Contents/MacOS/한국어다국어번역기"
+
+# entitlements.plist 파일 생성
+cat > "entitlements.plist" << EOL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
+EOL
+
+# 마지막으로 앱 전체에 서명 (entitlements 포함)
+echo "앱 번들 전체에 서명 중..."
+codesign --force --deep --options runtime --entitlements entitlements.plist --sign - "$APP_PATH"
+
+# 코드 서명 검증
+echo "코드 서명 검증 중..."
+codesign -vvv "$APP_PATH"
+
+# 서명 검증 결과 확인
+if [ $? -ne 0 ]; then
+    echo "경고: 코드 서명 검증에 실패했습니다."
+    echo "앱이 정상적으로 실행되지 않을 수 있습니다."
+    
+    # 추가 디버깅 정보
+    echo "실행 파일 확인:"
+    ls -la "$APP_PATH/Contents/MacOS/"
+    
+    echo "Python 라이브러리 확인:"
+    ls -la "$APP_PATH/Contents/Frameworks/libpython3.12.dylib" 2>/dev/null || echo "Python 라이브러리가 없습니다."
+else
+    echo "코드 서명이 성공적으로 적용되었습니다."
+fi
+
+# DMG 생성
+echo "DMG 파일 생성 중..."
+DMG_NAME="한국어다국어번역기_설치파일.dmg"
+
+# 기존 DMG 파일 삭제
+if [ -f "$DMG_NAME" ]; then
+    rm "$DMG_NAME"
+fi
+
+# hdiutil로 DMG 생성
+hdiutil create -volname "한국어 다국어 번역기" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_NAME"
+
+if [ $? -ne 0 ]; then
+    echo "DMG 파일 생성에 실패했습니다."
+    echo "애플리케이션은 'dist/한국어다국어번역기.app'에 생성되었습니다."
+else
+    echo "DMG 파일 생성 완료: $DMG_NAME"
+    echo "생성된 DMG 파일 정보:"
+    ls -lh "$DMG_NAME"
+fi
+
+# 디버그 실행 스크립트 생성
+cat > debug_app.sh << 'EOL'
+#!/bin/bash
+
+# 앱 디버깅 스크립트
+APP_PATH="dist/한국어다국어번역기.app"
+if [ ! -d "$APP_PATH" ]; then
+    echo "오류: $APP_PATH를 찾을 수 없습니다."
+    exit 1
+fi
+
+EXEC_PATH="$APP_PATH/Contents/MacOS/한국어다국어번역기"
+if [ ! -f "$EXEC_PATH" ]; then
+    echo "오류: 실행 파일을 찾을 수 없습니다."
+    find "$APP_PATH" -type f -name "한국어*" -o -name "Korean*"
+    exit 1
+fi
+
+echo "앱을 터미널에서 실행하여 오류 메시지를 확인합니다..."
+"$EXEC_PATH"
+EOL
+
+chmod +x debug_app.sh
+
+# 앱 확인 스크립트 생성
+cat > check_app.sh << 'EOL'
+#!/bin/bash
+
+# 앱 확인 스크립트
+APP_PATH="dist/한국어다국어번역기.app"
+if [ ! -d "$APP_PATH" ]; then
+    echo "오류: $APP_PATH를 찾을 수 없습니다."
+    exit 1
+fi
+
+echo "=== 앱 번들 구조 확인 ==="
+find "$APP_PATH" -type f -not -path "*/\.*" | sort
+
+echo -e "\n=== 앱 실행 파일 권한 확인 ==="
+ls -la "$APP_PATH/Contents/MacOS/"
+
+echo -e "\n=== Info.plist 확인 ==="
+cat "$APP_PATH/Contents/Info.plist"
+
+echo -e "\n=== 앱 코드 서명 확인 ==="
+codesign -vvv "$APP_PATH" 2>&1
+
+echo -e "\n=== 앱 서명 문제 해결 ==="
+echo "앱에 서명 문제가 있을 경우 다음 명령으로 해결할 수 있습니다:"
+echo "codesign --force --deep --sign - \"$APP_PATH\""
+
+echo -e "\n=== 앱 확장 속성 제거 ==="
+echo "quarantine 등의 확장 속성이 있을 경우 다음 명령으로 제거할 수 있습니다:"
+echo "xattr -cr \"$APP_PATH\""
+EOL
+
+chmod +x check_app.sh
+
+# 간단한 앱 실행 테스트
+echo "간단한 앱 실행 테스트 중..."
+if [ -f "$APP_PATH/Contents/MacOS/한국어다국어번역기" ]; then
+    "$APP_PATH/Contents/MacOS/한국어다국어번역기" &
+    APP_PID=$!
+    sleep 2
+    if kill -0 $APP_PID 2>/dev/null; then
+        echo "앱이 성공적으로 실행되었습니다. 종료합니다."
+        kill $APP_PID
+    else
+        echo "앱 실행 중 문제가 발생했습니다."
+    fi
+else
+    echo "실행 파일을 찾을 수 없습니다."
+fi
+
+
+echo "===== 패키징 완료 ====="
+echo "생성된 DMG 파일: $DMG_NAME"
+echo "애플리케이션 경로: $APP_PATH"
+echo ""
+echo "앱이 클릭으로 실행되지 않는 경우, 다음 스크립트를 실행하여 문제를 진단하세요:"
+echo "  ./check_app.sh   # 앱 번들 구조와 권한 확인"
+echo "  ./debug_app.sh   # 터미널에서 앱 실행하여 오류 메시지 확인"
+echo ""
+echo "참고사항:"
+echo "1. 이 애플리케이션을 실행하려면 Ollama가 설치되어 있어야 합니다."
+echo "2. 첫 실행 시 모델을 설치할 수 있으며, gemma3:12b 모델이 권장됩니다."
+echo "3. macOS의 '확인되지 않은 개발자' 경고가 표시될 경우:"
+echo "   시스템 환경설정 > 보안 및 개인 정보 보호에서 '확인 없이 열기' 클릭하거나"
+echo "   Control 키를 누른 상태로 앱을 클릭한 후 '열기' 선택"
+echo ""
+echo "설치 위치: 생성된 DMG 파일을 열고 애플리케이션을 Applications 폴더로 드래그하세요."

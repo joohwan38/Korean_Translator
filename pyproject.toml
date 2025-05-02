@@ -5,9 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.11.18",
+    "dmgbuild>=1.6.5",
     "openpyxl>=3.1.5",
     "pyinstaller>=6.13.0",
+    "pyobjc>=11.0",
     "tqdm>=4.67.1",
+    "ttkbootstrap>=1.12.2",
 ]
 
 [dependency-groups]
